@@ -8,7 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"hash"
+	"strings"
 	"sync"
+
+	"done-hub/common/config"
 
 	"github.com/spf13/viper"
 	"github.com/sqids/sqids-go"
@@ -27,11 +30,11 @@ var (
 )
 
 func InitUserToken() error {
-	tokenSecret := viper.GetString("user_token_secret")
-	sqidsAlphabet := viper.GetString("hashids_salt")
+	tokenSecret := resolveUserTokenSecret()
+	sqidsAlphabet := strings.TrimSpace(viper.GetString("hashids_salt"))
 
 	if tokenSecret == "" {
-		return errors.New("token_secret or hashids_salt is not set")
+		return errors.New("user_token_secret, token_secret and session_secret are all empty")
 	}
 
 	var err error
@@ -49,6 +52,16 @@ func InitUserToken() error {
 	jwtSecretBytes = []byte(tokenSecret)
 
 	return err
+}
+
+func resolveUserTokenSecret() string {
+	for _, key := range []string{"user_token_secret", "token_secret", "session_secret"} {
+		if secret := strings.TrimSpace(viper.GetString(key)); secret != "" {
+			return secret
+		}
+	}
+
+	return strings.TrimSpace(config.SessionSecret)
 }
 
 func GenerateToken(tokenID, userID int) (string, error) {
