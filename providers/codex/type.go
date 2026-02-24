@@ -14,6 +14,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+
 // CodexErrorResponse Codex 错误响应（包含 resets_in_seconds）
 type CodexErrorResponse struct {
 	Error CodexErrorDetail `json:"error"`

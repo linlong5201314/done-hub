@@ -120,6 +120,37 @@ func (p *CodexProvider) chatToResponsesRequest(request *types.ChatCompletionRequ
 	// 因此在 JSON 序列化时会自动忽略，效果等同于 Demo 的显式删除
 	p.adaptCodexCLI(responsesRequest)
 
+	// 5. 将 input 中的 system/developer 消息提取为 instructions
+	// Codex Responses API 推荐使用顶层 instructions 字段传递系统提示词
+	// 这比放在 input message 中更可靠
+	if responsesRequest.Input != nil {
+		var systemContents []string
+		var filteredInput []types.InputResponses
+		for _, input := range responsesRequest.Input {
+			if input.Role == "system" || input.Role == "developer" {
+				// 提取 system/developer 消息的文本内容
+				for _, content := range input.Content {
+					if content.Text != "" {
+						systemContents = append(systemContents, content.Text)
+					}
+				}
+			} else {
+				filteredInput = append(filteredInput, input)
+			}
+		}
+		// 如果提取到了系统提示词，合并到 instructions
+		if len(systemContents) > 0 {
+			existingInstructions := responsesRequest.Instructions
+			mergedInstructions := strings.Join(systemContents, "\n\n")
+			if existingInstructions != "" {
+				// 如果已有 instructions，将提取的内容追加到后面
+				mergedInstructions = existingInstructions + "\n\n" + mergedInstructions
+			}
+			responsesRequest.Instructions = mergedInstructions
+			responsesRequest.Input = filteredInput
+		}
+	}
+
 	return responsesRequest
 }
 
@@ -210,13 +241,138 @@ func (h *CodexStreamHandler) HandlerStream(rawLine *[]byte, dataChan chan string
 		// 转换为 Chat 格式的流式响应
 		chatResponse := h.convertResponsesStreamToChatStream(&responsesStream, delta)
 		if chatResponse != nil {
-			responseBody, err := json.Marshal(chatResponse)
-			if err != nil {
-				logger.SysError("Failed to marshal Chat stream response: " + err.Error())
-				return
-			}
-			dataChan <- string(responseBody)
+			h.sendChatStream(chatResponse, dataChan)
 		}
+		return
+	}
+
+	// 处理 response.function_call_arguments.delta 事件（函数调用参数增量）
+	if responsesStream.Type == "response.function_call_arguments.delta" {
+		delta, ok := responsesStream.Delta.(string)
+		if !ok {
+			return
+		}
+
+		chatResponse := h.buildStreamResponse(&responsesStream)
+		if responsesStream.Item != nil {
+			chatResponse.Choices = []types.ChatCompletionStreamChoice{
+				{
+					Index: 0,
+					Delta: types.ChatCompletionStreamChoiceDelta{
+						ToolCalls: []*types.ChatCompletionToolCalls{
+							{
+								Index: 0,
+								Id:    responsesStream.Item.CallID,
+								Type:  "function",
+								Function: &types.ChatCompletionToolCallsFunction{
+									Name:      responsesStream.Item.Name,
+									Arguments: delta,
+								},
+							},
+						},
+					},
+				},
+			}
+		}
+		h.sendChatStream(chatResponse, dataChan)
+		return
+	}
+
+	// 处理 response.function_call_arguments.done 事件（函数调用完成）
+	if responsesStream.Type == "response.function_call_arguments.done" {
+		chatResponse := h.buildStreamResponse(&responsesStream)
+		chatResponse.Choices = []types.ChatCompletionStreamChoice{
+			{
+				Index:        0,
+				Delta:        types.ChatCompletionStreamChoiceDelta{},
+				FinishReason: types.FinishReasonToolCalls,
+			},
+		}
+		h.sendChatStream(chatResponse, dataChan)
+		return
+	}
+
+	// 处理 response.output_text.done 事件（文本输出完成）
+	if responsesStream.Type == "response.output_text.done" {
+		chatResponse := h.buildStreamResponse(&responsesStream)
+		chatResponse.Choices = []types.ChatCompletionStreamChoice{
+			{
+				Index:        0,
+				Delta:        types.ChatCompletionStreamChoiceDelta{},
+				FinishReason: types.FinishReasonStop,
+			},
+		}
+		h.sendChatStream(chatResponse, dataChan)
+		return
+	}
+
+	// 处理 response.reasoning_summary_text.delta 事件（推理摘要增量）
+	if responsesStream.Type == "response.reasoning_summary_text.delta" {
+		delta, ok := responsesStream.Delta.(string)
+		if !ok {
+			return
+		}
+
+		chatResponse := h.buildStreamResponse(&responsesStream)
+		chatResponse.Choices = []types.ChatCompletionStreamChoice{
+			{
+				Index: 0,
+				Delta: types.ChatCompletionStreamChoiceDelta{
+					ReasoningContent: delta,
+				},
+			},
+		}
+		h.sendChatStream(chatResponse, dataChan)
+		return
+	}
+
+	// 处理 response.refusal.delta 事件（拒绝内容增量）
+	if responsesStream.Type == "response.refusal.delta" {
+		// 拒绝内容作为普通文本传递给客户端
+		delta, ok := responsesStream.Delta.(string)
+		if !ok {
+			return
+		}
+
+		chatResponse := h.convertResponsesStreamToChatStream(&responsesStream, delta)
+		if chatResponse != nil {
+			h.sendChatStream(chatResponse, dataChan)
+		}
+		return
+	}
+}
+
+// sendChatStream 序列化并发送 Chat 流式响应
+func (h *CodexStreamHandler) sendChatStream(chatResponse *types.ChatCompletionStreamResponse, dataChan chan string) {
+	responseBody, err := json.Marshal(chatResponse)
+	if err != nil {
+		logger.SysError("Failed to marshal Chat stream response: " + err.Error())
+		return
+	}
+	dataChan <- string(responseBody)
+}
+
+// buildStreamResponse 构建基础的 Chat 流式响应框架
+func (h *CodexStreamHandler) buildStreamResponse(responsesStream *types.OpenAIResponsesStreamResponses) *types.ChatCompletionStreamResponse {
+	responseID := ""
+	if responsesStream.Response != nil {
+		responseID = responsesStream.Response.ID
+	}
+
+	model := h.Request.Model
+	if h.Context != nil {
+		if provider, exists := h.Context.Get("provider"); exists {
+			if p, ok := provider.(*CodexProvider); ok {
+				model = p.GetResponseModelName(h.Request.Model)
+			}
+		}
+	}
+
+	return &types.ChatCompletionStreamResponse{
+		ID:      responseID,
+		Object:  "chat.completion.chunk",
+		Created: 0,
+		Model:   model,
 	}
 }
 

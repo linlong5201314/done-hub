@@ -44,10 +44,14 @@ func (f CodexProviderFactory) Create(channel *model.Channel) base.ProviderInterf
 	// 解析配置
 	parseCodexConfig(provider)
 
-	// 更新 RequestErrorHandle 使用实际的 token
-	if provider.Credentials != nil {
-		provider.Requester = requester.NewHTTPRequester(*channel.Proxy, RequestErrorHandle(provider.Credentials.AccessToken))
+	// 创建 RequestErrorHandle，使用闭包动态获取当前 token（刷新后也能正确清理）
+	currentTokenFn := func() string {
+		if provider.Credentials != nil {
+			return provider.Credentials.AccessToken
+		}
+		return ""
 	}
+	provider.Requester = requester.NewHTTPRequester(*channel.Proxy, RequestErrorHandleWithTokenFn(currentTokenFn))
 
 	return provider
 }
@@ -112,14 +116,21 @@ func getConfig() base.ProviderConfig {
 	}
 }
 
-// RequestErrorHandle 请求错误处理
+// RequestErrorHandle 请求错误处理（使用静态 token）
 func RequestErrorHandle(accessToken string) requester.HttpErrorHandler {
+	return RequestErrorHandleWithTokenFn(func() string { return accessToken })
+}
+
+// RequestErrorHandleWithTokenFn 请求错误处理（使用动态 token 函数，支持 token 刷新后仍能正确掩码）
+func RequestErrorHandleWithTokenFn(tokenFn func() string) requester.HttpErrorHandler {
 	return func(resp *http.Response) *types.OpenAIError {
 		// 读取响应体
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return nil
 		}
+
+		accessToken := tokenFn()
 
 		// 尝试解析为 Codex 错误响应（包含 resets_in_seconds）
 		var codexErrorResp CodexErrorResponse

@@ -110,6 +110,16 @@ func (p *CodexProvider) prepareCodexRequest(request *types.OpenAIResponsesReques
 	// Go 通过结构体定义自动过滤：OpenAIResponsesRequest 中未定义 metadata 字段，
 	// 因此在 JSON 序列化时会自动忽略，效果等同于 Demo 的显式删除
 	p.adaptCodexCLI(request)
+
+	// 5. 将 system 角色转换为 developer 角色
+	// Codex 上游的 Responses API 不支持 system 角色
+	if request.Input != nil {
+		for i := range request.Input {
+			if request.Input[i].Role == "system" {
+				request.Input[i].Role = "developer"
+			}
+		}
+	}
 }
 
 // adaptCodexCLI 适配 Codex CLI 格式
@@ -124,14 +134,25 @@ func (p *CodexProvider) adaptCodexCLI(request *types.OpenAIResponsesRequest) {
 				instructions[:len("You are Codex")] == "You are Codex")
 	}
 
-	// 如果不是 Codex CLI 请求，则进行适配
-	if !isCodexCLI {
-		// 移除不兼容的请求体字段
-		request.Temperature = nil
-		request.TopP = nil
-		request.MaxOutputTokens = 0
+	// 如果是 Codex CLI 请求，保持原样；无需适配
+	if isCodexCLI {
+		return
+	}
 
-		// 设置固定的 Codex CLI instructions
+	// 检查用户是否已提供自定义系统提示词（instructions 或 input 中的 developer/system 消息）
+	hasUserInstructions := request.Instructions != ""
+	if !hasUserInstructions && request.Input != nil {
+		for _, input := range request.Input {
+			if input.Role == "system" || input.Role == "developer" {
+				hasUserInstructions = true
+				break
+			}
+		}
+	}
+
+	// 只在用户完全没有提供系统提示时，才补充默认的 Codex CLI instructions
+	// 避免覆盖用户（如 OpenClaw）自带的系统提示词
+	if !hasUserInstructions {
 		request.Instructions = CodexCLIInstructions
 	}
 }
