@@ -61,6 +61,7 @@ type OpenAIResponsesRequest struct {
 	Include            any              `json:"include,omitempty"`
 	Instructions       string           `json:"instructions,omitempty"`
 	MaxOutputTokens    int              `json:"max_output_tokens,omitempty"`
+	MaxTokens          int              `json:"max_tokens,omitempty"`
 	MaxToolCalls       *int             `json:"max_tool_calls,omitempty"`
 	ParallelToolCalls  bool             `json:"parallel_tool_calls,omitempty"`
 	PreviousResponseID string           `json:"previous_response_id,omitempty"`

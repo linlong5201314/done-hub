@@ -113,6 +113,10 @@ func (p *CodexProvider) prepareCodexRequest(request *types.OpenAIResponsesReques
 
 	// 5. 将 system 角色转换为 developer 角色
 	// Codex 上游的 Responses API 不支持 system 角色
+	if request.MaxOutputTokens > 0 {
+		request.MaxTokens = request.MaxOutputTokens
+		request.MaxOutputTokens = 0
+	}
 	if request.Input != nil {
 		parsedInputs, err := request.ParseInput()
 		if err == nil {
