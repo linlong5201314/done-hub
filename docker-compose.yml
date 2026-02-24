@@ -12,8 +12,8 @@ services:
     environment:
       - SQL_DSN=oneapi:123456@tcp(db:3306)/done-hub # 修改此行，或注释掉以使用 SQLite 作为数据库
       - REDIS_CONN_STRING=redis://redis # redis
-      - SESSION_SECRET=random_string # 修改为随机字符串
-      - USER_TOKEN_SECRET=random_string # 修改为随机字符串,32位以上
+      - SESSION_SECRET=random_string # ⚠️ 必须修改！替换为固定的随机字符串，否则重启后所有登录会话失效。可用命令生成: openssl rand -hex 32
+      - USER_TOKEN_SECRET=random_string # ⚠️ 必须修改！替换为固定的随机字符串(32位以上)，否则重启后所有 API 令牌失效。可用命令生成: openssl rand -hex 32
       - TZ=Asia/Shanghai
       # - HASHIDS_SALT=random_string # 可空，建议设置，字符串元素不能重复
     #      - NODE_TYPE=slave  # 多机部署时从节点取消注释该行

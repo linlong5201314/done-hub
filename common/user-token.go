@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"hash"
+	"log"
+	"os"
 	"strings"
 	"sync"
 
@@ -27,6 +29,8 @@ var (
 			return hmac.New(sha256.New, jwtSecretBytes)
 		},
 	}
+
+	secretFileName = ".user_token_secret"
 )
 
 func InitUserToken() error {
@@ -61,7 +65,27 @@ func resolveUserTokenSecret() string {
 		}
 	}
 
-	return strings.TrimSpace(config.SessionSecret)
+	// No environment variable set, try to load persisted secret from file
+	if data, err := os.ReadFile(secretFileName); err == nil {
+		if secret := strings.TrimSpace(string(data)); secret != "" {
+			log.Printf("[WARNING] No USER_TOKEN_SECRET or SESSION_SECRET env set, using persisted secret from %s", secretFileName)
+			return secret
+		}
+	}
+
+	// Fall back to config.SessionSecret (random UUID) and persist it for next restart
+	secret := strings.TrimSpace(config.SessionSecret)
+	if secret == "" {
+		return ""
+	}
+
+	if err := os.WriteFile(secretFileName, []byte(secret), 0600); err != nil {
+		log.Printf("[WARNING] Failed to persist token secret to %s: %v — tokens will be invalidated on restart!", secretFileName, err)
+	} else {
+		log.Printf("[WARNING] No USER_TOKEN_SECRET or SESSION_SECRET env set. Auto-generated secret persisted to %s. Set a fixed secret in production.", secretFileName)
+	}
+
+	return secret
 }
 
 func GenerateToken(tokenID, userID int) (string, error) {
