@@ -4,8 +4,10 @@ import (
 	"done-hub/common"
 	"done-hub/common/logger"
 	"done-hub/common/requester"
+	"done-hub/common/utils"
 	"done-hub/types"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -196,9 +198,12 @@ func (p *CodexProvider) applyDefaultHeaders(headers map[string]string) {
 
 // CodexStreamHandler Codex 流式响应处理器
 type CodexStreamHandler struct {
-	Usage   *types.Usage
-	Request *types.ChatCompletionRequest
-	Context *gin.Context
+	Usage          *types.Usage
+	Request        *types.ChatCompletionRequest
+	Context        *gin.Context
+	isFirstChunk   bool  // 是否已发送第一个 role chunk
+	streamID       string // 本次流式会话的统一 ID（所有 chunk 共享）
+	streamCreated  int64  // 本次流式会话的统一时间戳
 }
 
 // HandlerStream 处理流式响应（将 Responses 格式转换为 Chat 格式）
@@ -248,6 +253,10 @@ func (h *CodexStreamHandler) HandlerStream(rawLine *[]byte, dataChan chan string
 			return
 		}
 
+		// OpenAI 标准：第一个 chunk 先发送 role-only delta（role: "assistant", content: ""）
+		// 许多客户端（Cherry Studio、NextChat 等）依赖此行为来初始化消息
+		h.sendFirstRoleChunk(&responsesStream, dataChan)
+
 		// 转换为 Chat 格式的流式响应
 		chatResponse := h.convertResponsesStreamToChatStream(&responsesStream, delta)
 		if chatResponse != nil {
@@ -262,6 +271,8 @@ func (h *CodexStreamHandler) HandlerStream(rawLine *[]byte, dataChan chan string
 		if !ok {
 			return
 		}
+
+		h.sendFirstRoleChunk(&responsesStream, dataChan)
 
 		chatResponse := h.buildStreamResponse(&responsesStream)
 		if responsesStream.Item != nil {
@@ -323,6 +334,9 @@ func (h *CodexStreamHandler) HandlerStream(rawLine *[]byte, dataChan chan string
 			return
 		}
 
+		// 推理事件可能在文本事件之前到达，同样需要先发送 role chunk
+		h.sendFirstRoleChunk(&responsesStream, dataChan)
+
 		chatResponse := h.buildStreamResponse(&responsesStream)
 		chatResponse.Choices = []types.ChatCompletionStreamChoice{
 			{
@@ -362,11 +376,41 @@ func (h *CodexStreamHandler) sendChatStream(chatResponse *types.ChatCompletionSt
 	dataChan <- string(responseBody)
 }
 
+// sendFirstRoleChunk 发送第一个 role-only chunk（如果尚未发送）
+// OpenAI 标准要求：流式响应的第一个 chunk 必须包含 role: "assistant"
+// 许多客户端（Cherry Studio、NextChat、OpenCode 等）依赖此行为来初始化消息
+func (h *CodexStreamHandler) sendFirstRoleChunk(responsesStream *types.OpenAIResponsesStreamResponses, dataChan chan string) {
+	if h.isFirstChunk {
+		return
+	}
+	h.isFirstChunk = true
+	roleChunk := h.buildStreamResponse(responsesStream)
+	roleChunk.Choices = []types.ChatCompletionStreamChoice{
+		{
+			Index: 0,
+			Delta: types.ChatCompletionStreamChoiceDelta{
+				Role: "assistant",
+			},
+		},
+	}
+	h.sendChatStream(roleChunk, dataChan)
+}
+
 // buildStreamResponse 构建基础的 Chat 流式响应框架
 func (h *CodexStreamHandler) buildStreamResponse(responsesStream *types.OpenAIResponsesStreamResponses) *types.ChatCompletionStreamResponse {
-	responseID := ""
-	if responsesStream.Response != nil {
-		responseID = responsesStream.Response.ID
+	// 使用统一的流式 ID（所有 chunk 共享同一个 ID，符合 OpenAI 规范）
+	if h.streamID == "" {
+		responseID := ""
+		if responsesStream.Response != nil && responsesStream.Response.ID != "" {
+			responseID = responsesStream.Response.ID
+		}
+		if responseID == "" {
+			responseID = fmt.Sprintf("chatcmpl-%s", utils.GetUUID())
+		}
+		h.streamID = responseID
+	}
+	if h.streamCreated == 0 {
+		h.streamCreated = utils.GetTimestamp()
 	}
 
 	model := h.Request.Model
@@ -379,9 +423,9 @@ func (h *CodexStreamHandler) buildStreamResponse(responsesStream *types.OpenAIRe
 	}
 
 	return &types.ChatCompletionStreamResponse{
-		ID:      responseID,
+		ID:      h.streamID,
 		Object:  "chat.completion.chunk",
-		Created: 0,
+		Created: h.streamCreated,
 		Model:   model,
 	}
 }
@@ -389,9 +433,14 @@ func (h *CodexStreamHandler) buildStreamResponse(responsesStream *types.OpenAIRe
 // collectStreamResponse 收集流式响应并转换为非流式格式
 func (p *CodexProvider) collectStreamResponse(stream requester.StreamReaderInterface[string], request *types.ChatCompletionRequest) (*types.ChatCompletionResponse, *types.OpenAIErrorWithStatusCode) {
 	var fullContent strings.Builder
+	var fullReasoning strings.Builder
 	var responseID string
 	var model string = request.Model
 	var finishReason string = "stop"
+
+	// 工具调用收集：key = tool call index，按顺序追加参数
+	toolCallsMap := make(map[int]*types.ChatCompletionToolCalls)
+	var toolCallOrder []int // 保持工具调用的顺序
 
 	// 获取数据和错误通道
 	dataChan, errChan := stream.Recv()
@@ -425,9 +474,54 @@ func (p *CodexProvider) collectStreamResponse(stream requester.StreamReaderInter
 			// 收集内容
 			if len(chatStream.Choices) > 0 {
 				choice := chatStream.Choices[0]
+
+				// 收集文本内容
 				if choice.Delta.Content != "" {
 					fullContent.WriteString(choice.Delta.Content)
 				}
+
+				// 收集推理内容（reasoning models 如 o1、o3 等）
+				if choice.Delta.ReasoningContent != "" {
+					fullReasoning.WriteString(choice.Delta.ReasoningContent)
+				}
+
+				// 收集工具调用（function calling）
+				if choice.Delta.ToolCalls != nil {
+					for _, tc := range choice.Delta.ToolCalls {
+						idx := tc.Index
+						existing, exists := toolCallsMap[idx]
+						if !exists {
+							// 新的工具调用
+							toolCallsMap[idx] = &types.ChatCompletionToolCalls{
+								Id:    tc.Id,
+								Type:  tc.Type,
+								Index: idx,
+								Function: &types.ChatCompletionToolCallsFunction{
+									Name:      "",
+									Arguments: "",
+								},
+							}
+							toolCallOrder = append(toolCallOrder, idx)
+							existing = toolCallsMap[idx]
+						}
+						// 追加函数名和参数（流式中可能分多个 chunk 发送）
+						if tc.Id != "" {
+							existing.Id = tc.Id
+						}
+						if tc.Type != "" {
+							existing.Type = tc.Type
+						}
+						if tc.Function != nil {
+							if tc.Function.Name != "" {
+								existing.Function.Name += tc.Function.Name
+							}
+							if tc.Function.Arguments != "" {
+								existing.Function.Arguments += tc.Function.Arguments
+							}
+						}
+					}
+				}
+
 				if choice.FinishReason != nil {
 					if fr, ok := choice.FinishReason.(string); ok && fr != "" {
 						finishReason = fr
@@ -452,6 +546,32 @@ func (p *CodexProvider) collectStreamResponse(stream requester.StreamReaderInter
 	}
 
 buildResponse:
+	// 如果没有获取到 responseID，生成一个标准格式的 ID
+	if responseID == "" {
+		responseID = fmt.Sprintf("chatcmpl-%s", utils.GetUUID())
+	}
+
+	// 构建消息
+	message := types.ChatCompletionMessage{
+		Role:    "assistant",
+		Content: fullContent.String(),
+	}
+
+	// 如果有推理内容，添加到消息中
+	if fullReasoning.Len() > 0 {
+		message.ReasoningContent = fullReasoning.String()
+	}
+
+	// 如果有工具调用，按顺序添加到消息中
+	if len(toolCallsMap) > 0 {
+		var toolCalls []*types.ChatCompletionToolCalls
+		for _, idx := range toolCallOrder {
+			tc := toolCallsMap[idx]
+			toolCalls = append(toolCalls, tc)
+		}
+		message.ToolCalls = toolCalls
+	}
+
 	// 构建完整的非流式响应
 	response := &types.ChatCompletionResponse{
 		ID:      responseID,
@@ -460,11 +580,8 @@ buildResponse:
 		Model:   model,
 		Choices: []types.ChatCompletionChoice{
 			{
-				Index: 0,
-				Message: types.ChatCompletionMessage{
-					Role:    "assistant",
-					Content: fullContent.String(),
-				},
+				Index:        0,
+				Message:      message,
 				FinishReason: finishReason,
 			},
 		},
@@ -480,33 +597,14 @@ buildResponse:
 
 // convertResponsesStreamToChatStream 将 Responses 流式响应转换为 Chat 流式响应
 func (h *CodexStreamHandler) convertResponsesStreamToChatStream(responsesStream *types.OpenAIResponsesStreamResponses, delta string) *types.ChatCompletionStreamResponse {
-	// 获取响应 ID
-	responseID := ""
-	if responsesStream.Response != nil {
-		responseID = responsesStream.Response.ID
-	}
+	// 使用 buildStreamResponse 统一生成 ID/Created/Model
+	response := h.buildStreamResponse(responsesStream)
 
-	// 获取响应中应该使用的模型名称
-	model := h.Request.Model
-	if h.Context != nil {
-		if provider, exists := h.Context.Get("provider"); exists {
-			if p, ok := provider.(*CodexProvider); ok {
-				model = p.GetResponseModelName(h.Request.Model)
-			}
-		}
-	}
-
-	response := &types.ChatCompletionStreamResponse{
-		ID:      responseID,
-		Object:  "chat.completion.chunk",
-		Created: 0,
-		Model:   model,
-		Choices: []types.ChatCompletionStreamChoice{
-			{
-				Index: 0,
-				Delta: types.ChatCompletionStreamChoiceDelta{
-					Content: delta,
-				},
+	response.Choices = []types.ChatCompletionStreamChoice{
+		{
+			Index: 0,
+			Delta: types.ChatCompletionStreamChoiceDelta{
+				Content: delta,
 			},
 		},
 	}
@@ -526,9 +624,15 @@ func (p *CodexProvider) convertResponsesToChatCompletion(responsesResp *types.Op
 		}
 	}
 
+	// 确保 ID 不为空（某些上游返回可能缺少 ID）
+	responseID := responsesResp.ID
+	if responseID == "" {
+		responseID = fmt.Sprintf("chatcmpl-%s", utils.GetUUID())
+	}
+
 	// 构建 Chat 格式响应
 	chatResponse := &types.ChatCompletionResponse{
-		ID:      responsesResp.ID,
+		ID:      responseID,
 		Object:  "chat.completion",
 		Created: responsesResp.CreatedAt,
 		Model:   p.GetResponseModelName(model),

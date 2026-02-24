@@ -47,21 +47,60 @@ func SetRouter(router *gin.Engine, buildFS embed.FS, indexPage []byte) {
 }
 
 // urlNormalize 返回 URL 路径归一化中间件
-// 将重复的 /v1/v1/ 前缀归一化为 /v1/，兼容 Cherry Studio、NextChat 等
-// 将 Base URL 配置为 https://host/v1 的客户端（客户端自动拼接 /v1/...，导致 /v1/v1/...）
+// 1. 将重复的 /v1/v1/ 前缀归一化为 /v1/，兼容 Cherry Studio、NextChat 等
+//    将 Base URL 配置为 https://host/v1 的客户端（客户端自动拼接 /v1/...，导致 /v1/v1/...）
+// 2. 将缺少 /v1 前缀的 OpenAI API 路径自动补充 /v1，兼容直接使用
+//    https://host 作为 Base URL 且不自动拼接 /v1 的客户端
 func urlNormalize(engine *gin.Engine) gin.HandlerFunc {
+	// 需要自动补充 /v1 前缀的 API 路径
+	bareAPIPaths := []string{
+		"/chat/completions",
+		"/completions",
+		"/responses",
+		"/models",
+		"/embeddings",
+		"/images/generations",
+		"/images/edits",
+		"/images/variations",
+		"/audio/transcriptions",
+		"/audio/translations",
+		"/audio/speech",
+		"/moderations",
+		"/rerank",
+	}
+
 	return func(c *gin.Context) {
 		path := c.Request.URL.Path
-		// 循环处理多层重复的 /v1/v1/v1/... → /v1/...
+		changed := false
+
+		// 规则 1: 循环处理多层重复的 /v1/v1/v1/... → /v1/...
 		for strings.HasPrefix(path, "/v1/v1") {
 			path = strings.TrimPrefix(path, "/v1")
+			changed = true
 		}
-		if path != c.Request.URL.Path {
+
+		// 规则 2: 缺少 /v1 前缀的 API 路径自动补充
+		if !changed {
+			for _, apiPath := range bareAPIPaths {
+				if path == apiPath || strings.HasPrefix(path, apiPath+"/") {
+					path = "/v1" + path
+					changed = true
+					break
+				}
+			}
+		}
+
+		if changed {
 			c.Request.URL.Path = path
 			if c.Request.URL.RawPath != "" {
 				rawPath := c.Request.URL.RawPath
+				// 规则 1 的 RawPath 处理
 				for strings.HasPrefix(rawPath, "/v1/v1") {
 					rawPath = strings.TrimPrefix(rawPath, "/v1")
+				}
+				// 规则 2 的 RawPath 处理：如果 Path 被加了 /v1 前缀，RawPath 也需要
+				if strings.HasPrefix(c.Request.URL.Path, "/v1") && !strings.HasPrefix(rawPath, "/v1") {
+					rawPath = "/v1" + rawPath
 				}
 				c.Request.URL.RawPath = rawPath
 			}
