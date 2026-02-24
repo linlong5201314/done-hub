@@ -109,12 +109,13 @@ func (p *CodexProvider) chatToResponsesRequest(request *types.ChatCompletionRequ
 	storeFalse := false
 	responsesRequest.Store = &storeFalse
 
-	// 3. 处理 temperature 和 top_p 冲突
-	// 当两者都存在时，优先保留 temperature，删除 top_p
-	// 这是因为某些 API 不允许同时设置这两个参数
-	if responsesRequest.Temperature != nil && responsesRequest.TopP != nil {
-		responsesRequest.TopP = nil
-	}
+	// 3. 处理不支持的参数
+	// Codex (gpt-5 系列) 接口非常严格，不支持 temperature、top_p、max_tokens 等常见参数
+	// 客户端（如 Cherry Studio、OpenCode）通常会默认携带这些参数，如果不清理，上游会直接返回 400 Bad Request
+	responsesRequest.Temperature = nil
+	responsesRequest.TopP = nil
+	responsesRequest.MaxOutputTokens = 0
+	responsesRequest.MaxTokens = 0
 
 	// 4. 适配 Codex CLI 格式（使用统一的方法）
 	// 注意：metadata 字段处理
