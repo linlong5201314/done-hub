@@ -114,9 +114,17 @@ func (p *CodexProvider) prepareCodexRequest(request *types.OpenAIResponsesReques
 	// 5. 将 system 角色转换为 developer 角色
 	// Codex 上游的 Responses API 不支持 system 角色
 	if request.Input != nil {
-		for i := range request.Input {
-			if request.Input[i].Role == "system" {
-				request.Input[i].Role = "developer"
+		parsedInputs, err := request.ParseInput()
+		if err == nil {
+			modified := false
+			for i := range parsedInputs {
+				if parsedInputs[i].Role == "system" {
+					parsedInputs[i].Role = "developer"
+					modified = true
+				}
+			}
+			if modified {
+				request.Input = parsedInputs
 			}
 		}
 	}
@@ -142,10 +150,13 @@ func (p *CodexProvider) adaptCodexCLI(request *types.OpenAIResponsesRequest) {
 	// 检查用户是否已提供自定义系统提示词（instructions 或 input 中的 developer/system 消息）
 	hasUserInstructions := request.Instructions != ""
 	if !hasUserInstructions && request.Input != nil {
-		for _, input := range request.Input {
-			if input.Role == "system" || input.Role == "developer" {
-				hasUserInstructions = true
-				break
+		parsedInputs, err := request.ParseInput()
+		if err == nil {
+			for _, input := range parsedInputs {
+				if input.Role == "system" || input.Role == "developer" {
+					hasUserInstructions = true
+					break
+				}
 			}
 		}
 	}

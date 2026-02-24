@@ -124,30 +124,36 @@ func (p *CodexProvider) chatToResponsesRequest(request *types.ChatCompletionRequ
 	// Codex Responses API 推荐使用顶层 instructions 字段传递系统提示词
 	// 这比放在 input message 中更可靠
 	if responsesRequest.Input != nil {
-		var systemContents []string
-		var filteredInput []types.InputResponses
-		for _, input := range responsesRequest.Input {
-			if input.Role == "system" || input.Role == "developer" {
-				// 提取 system/developer 消息的文本内容
-				for _, content := range input.Content {
-					if content.Text != "" {
-						systemContents = append(systemContents, content.Text)
+		parsedInputs, err := responsesRequest.ParseInput()
+		if err == nil && len(parsedInputs) > 0 {
+			var systemContents []string
+			var filteredInput []types.InputResponses
+			for _, input := range parsedInputs {
+				if input.Role == "system" || input.Role == "developer" {
+					// 提取 system/developer 消息的文本内容
+					contents, parseErr := input.ParseContent()
+					if parseErr == nil {
+						for _, content := range contents {
+							if content.Text != "" {
+								systemContents = append(systemContents, content.Text)
+							}
+						}
 					}
+				} else {
+					filteredInput = append(filteredInput, input)
 				}
-			} else {
-				filteredInput = append(filteredInput, input)
 			}
-		}
-		// 如果提取到了系统提示词，合并到 instructions
-		if len(systemContents) > 0 {
-			existingInstructions := responsesRequest.Instructions
-			mergedInstructions := strings.Join(systemContents, "\n\n")
-			if existingInstructions != "" {
-				// 如果已有 instructions，将提取的内容追加到后面
-				mergedInstructions = existingInstructions + "\n\n" + mergedInstructions
+			// 如果提取到了系统提示词，合并到 instructions
+			if len(systemContents) > 0 {
+				existingInstructions := responsesRequest.Instructions
+				mergedInstructions := strings.Join(systemContents, "\n\n")
+				if existingInstructions != "" {
+					// 如果已有 instructions，将提取的内容追加到后面
+					mergedInstructions = existingInstructions + "\n\n" + mergedInstructions
+				}
+				responsesRequest.Instructions = mergedInstructions
+				responsesRequest.Input = filteredInput
 			}
-			responsesRequest.Instructions = mergedInstructions
-			responsesRequest.Input = filteredInput
 		}
 	}
 
