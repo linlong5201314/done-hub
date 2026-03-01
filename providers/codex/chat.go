@@ -100,9 +100,25 @@ func (p *CodexProvider) chatToResponsesRequest(request *types.ChatCompletionRequ
 	// 使用标准的转换方法
 	responsesRequest := request.ToResponsesRequest()
 
-	// 1. 模型名称规范化：gpt-5-* 系列统一为 gpt-5
-	if len(responsesRequest.Model) > 6 && responsesRequest.Model[:6] == "gpt-5-" && responsesRequest.Model != "gpt-5-codex" {
-		responsesRequest.Model = "gpt-5"
+	// 0. 解析模型名称中的 reasoning effort 后缀 (-high, -medium, -low)
+	effort, cleanModel := parseReasoningEffortFromModelSuffix(responsesRequest.Model)
+	if effort != "" {
+		responsesRequest.Model = cleanModel
+		if responsesRequest.Reasoning == nil {
+			effortStr := effort
+			responsesRequest.Reasoning = &types.ReasoningEffort{
+				Effort: &effortStr,
+			}
+		} else if responsesRequest.Reasoning.Effort == nil {
+			effortStr := effort
+			responsesRequest.Reasoning.Effort = &effortStr
+		}
+	}
+
+	// 1. 模型名称规范化：gpt-5-* 系列统一为 gpt-5（但保留 gpt-5-codex 系列）
+	normalizedModel := normalizeCodexModelName(responsesRequest.Model)
+	if normalizedModel != responsesRequest.Model {
+		responsesRequest.Model = normalizedModel
 	}
 
 	// 2. Codex API 要求 store 参数必须设置为 false
@@ -194,6 +210,16 @@ func (p *CodexProvider) applyDefaultHeaders(headers map[string]string) {
 	// 设置 Accept（如果没有设置）
 	if _, exists := headers["Accept"]; !exists {
 		headers["Accept"] = "application/json"
+	}
+
+	// 设置 OpenAI-Beta（如果没有设置，与 new-api-main 保持一致）
+	if _, exists := headers["OpenAI-Beta"]; !exists {
+		headers["OpenAI-Beta"] = "responses=experimental"
+	}
+
+	// 设置 originator（如果没有设置）
+	if _, exists := headers["originator"]; !exists {
+		headers["originator"] = "codex_cli_rs"
 	}
 }
 

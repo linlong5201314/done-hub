@@ -89,9 +89,26 @@ func (p *CodexProvider) CreateResponsesStream(request *types.OpenAIResponsesRequ
 
 // prepareCodexRequest 准备 Codex 请求参数
 func (p *CodexProvider) prepareCodexRequest(request *types.OpenAIResponsesRequest) {
-	// 1. 模型名称规范化：gpt-5-* 系列统一为 gpt-5
-	if len(request.Model) > 6 && request.Model[:6] == "gpt-5-" && request.Model != "gpt-5-codex" {
-		request.Model = "gpt-5"
+	// 0. 解析模型名称中的 reasoning effort 后缀 (-high, -medium, -low)
+	// 例如: gpt-5-codex-high → model=gpt-5-codex, reasoning.effort=high
+	effort, cleanModel := parseReasoningEffortFromModelSuffix(request.Model)
+	if effort != "" {
+		request.Model = cleanModel
+		if request.Reasoning == nil {
+			effortStr := effort
+			request.Reasoning = &types.ReasoningEffort{
+				Effort: &effortStr,
+			}
+		} else if request.Reasoning.Effort == nil {
+			effortStr := effort
+			request.Reasoning.Effort = &effortStr
+		}
+	}
+
+	// 1. 模型名称规范化：gpt-5-* 系列统一为 gpt-5（但保留 gpt-5-codex 系列）
+	normalizedModel := normalizeCodexModelName(request.Model)
+	if normalizedModel != request.Model {
+		request.Model = normalizedModel
 	}
 
 	// 2. Codex API 要求 store 参数必须设置为 false

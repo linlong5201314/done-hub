@@ -219,6 +219,8 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			codexRoute.POST("/oauth/start", controller.StartCodexOAuth)
 			codexRoute.POST("/oauth/exchange-code", controller.CodexOAuthCallback)
+			codexRoute.GET("/channel/:id/usage", controller.GetCodexChannelUsage)
+			codexRoute.POST("/channel/:id/refresh", controller.RefreshCodexChannelCredential)
 		}
 
 		// Antigravity OAuth routes

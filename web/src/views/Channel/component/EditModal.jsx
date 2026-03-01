@@ -120,6 +120,12 @@ const EditModal = ({ open, channelId, onCancel, onOk, groupOptions, isTag, model
   const [codexSessionId, setCodexSessionId] = useState('')
   const [codexAuthCode, setCodexAuthCode] = useState('')
   const [codexSubmitting, setCodexSubmitting] = useState(false)
+  // Codex 用量弹窗
+  const [codexUsageVisible, setCodexUsageVisible] = useState(false)
+  const [codexUsageData, setCodexUsageData] = useState(null)
+  const [codexUsageLoading, setCodexUsageLoading] = useState(false)
+  // Codex 凭证刷新
+  const [codexRefreshing, setCodexRefreshing] = useState(false)
 
   // 清理 OAuth 相关资源
   const cleanupOAuth = () => {
@@ -673,6 +679,55 @@ const EditModal = ({ open, channelId, onCancel, onOk, groupOptions, isTag, model
     setCodexSessionId('')
     setCodexAuthCode('')
     setCodexSubmitting(false)
+  }
+
+  // Codex 用量查询
+  const handleCodexUsage = async () => {
+    if (!channelId) {
+      showError('请先保存渠道后查看用量')
+      return
+    }
+    try {
+      setCodexUsageLoading(true)
+      setCodexUsageVisible(true)
+      const res = await API.get(`/api/codex/channel/${channelId}/usage`)
+      if (res.data.success) {
+        setCodexUsageData(res.data.data)
+      } else {
+        showError(res.data.message || '获取用量失败')
+        setCodexUsageData(null)
+      }
+    } catch (error) {
+      showError('获取用量失败: ' + (error.message || error))
+      setCodexUsageData(null)
+    } finally {
+      setCodexUsageLoading(false)
+    }
+  }
+
+  // Codex 手动刷新凭证
+  const handleCodexRefreshCredential = async (setFieldValue) => {
+    if (!channelId) {
+      showError('请先保存渠道后刷新凭证')
+      return
+    }
+    try {
+      setCodexRefreshing(true)
+      const res = await API.post(`/api/codex/channel/${channelId}/refresh`)
+      if (res.data.success) {
+        const data = res.data.data
+        let msg = '凭证刷新成功'
+        if (data.email) msg += `，邮箱: ${data.email}`
+        if (data.expires_at) msg += `，过期时间: ${data.expires_at}`
+        showSuccess(msg)
+      } else {
+        showError(res.data.message || '凭证刷新失败')
+      }
+    } catch (error) {
+      showError('凭证刷新失败: ' + (error.message || error))
+    } finally {
+      setCodexRefreshing(false)
+    }
   }
 
   const handleTypeChange = (setFieldValue, typeValue, values) => {
@@ -1602,18 +1657,48 @@ const EditModal = ({ open, channelId, onCancel, onOk, groupOptions, isTag, model
                 {/* Codex OAuth 授权按钮 */}
                 {values.type === 59 && !batchAdd && (
                   <Box sx={{ mt: 2, mb: 2 }}>
-                    <Button
-                      variant="outlined"
-                      color="primary"
-                      fullWidth
-                      disabled={codexSubmitting}
-                      onClick={() => handleCodexOAuth(values.proxy)}
-                      startIcon={codexSubmitting ? null : <Icon icon="simple-icons:openai"/>}
-                    >
-                      {codexSubmitting ? '获取授权链接中...' : 'OAuth 授权'}
-                    </Button>
+                    <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+                      <Button
+                        variant="outlined"
+                        color="primary"
+                        fullWidth
+                        disabled={codexSubmitting}
+                        onClick={() => handleCodexOAuth(values.proxy)}
+                        startIcon={codexSubmitting ? null : <Icon icon="simple-icons:openai"/>}
+                      >
+                        {codexSubmitting ? '获取授权链接中...' : 'OAuth 授权'}
+                      </Button>
+                      {channelId > 0 && (
+                        <>
+                          <Button
+                            variant="outlined"
+                            color="secondary"
+                            disabled={codexRefreshing}
+                            onClick={() => handleCodexRefreshCredential(setFieldValue)}
+                            startIcon={<Icon icon="mdi:refresh"/>}
+                            sx={{ minWidth: '130px' }}
+                          >
+                            {codexRefreshing ? '刷新中...' : '刷新凭证'}
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            color="info"
+                            disabled={codexUsageLoading}
+                            onClick={handleCodexUsage}
+                            startIcon={<Icon icon="mdi:chart-bar"/>}
+                            sx={{ minWidth: '130px' }}
+                          >
+                            {codexUsageLoading ? '加载中...' : '查看用量'}
+                          </Button>
+                        </>
+                      )}
+                    </Box>
                     <Alert severity="info" sx={{ mt: 1 }}>
                       点击按钮后，将打开 OpenAI 授权页面。授权成功后，请复制浏览器地址栏中的完整 URL 并粘贴到弹出的输入框中。
+                      {channelId > 0 && ' 凭证支持自动刷新（每10分钟检查一次，提前24小时刷新）。'}
+                    </Alert>
+                    <Alert severity="warning" sx={{ mt: 1 }}>
+                      Codex 渠道使用 ChatGPT 账户的 OAuth 凭证，请确保您的账户拥有相应的使用权限。使用此渠道即表示您了解相关风险。
                     </Alert>
 
                     {/* Codex OAuth 对话框 */}
@@ -1688,6 +1773,74 @@ const EditModal = ({ open, channelId, onCancel, onOk, groupOptions, isTag, model
                           disabled={codexSubmitting || !codexAuthCode}
                         >
                           {codexSubmitting ? '提交中...' : '提交授权码'}
+                        </Button>
+                      </DialogActions>
+                    </Dialog>
+
+                    {/* Codex 用量弹窗 */}
+                    <Dialog
+                      open={codexUsageVisible}
+                      onClose={() => setCodexUsageVisible(false)}
+                      maxWidth="sm"
+                      fullWidth
+                    >
+                      <DialogTitle>Codex 用量信息</DialogTitle>
+                      <DialogContent>
+                        {codexUsageLoading ? (
+                          <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+                            <Typography>加载中...</Typography>
+                          </Box>
+                        ) : codexUsageData ? (
+                          <Box>
+                            {codexUsageData.rate_limits && Array.isArray(codexUsageData.rate_limits) ? (
+                              codexUsageData.rate_limits.map((limit, idx) => (
+                                <Box key={idx} sx={{ mb: 2, p: 2, bgcolor: 'background.default', borderRadius: 1 }}>
+                                  <Typography variant="subtitle2" gutterBottom>
+                                    {limit.label || limit.window || `限制 ${idx + 1}`}
+                                  </Typography>
+                                  {limit.max_usage !== undefined && limit.current_usage !== undefined && (
+                                    <>
+                                      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                                        <Typography variant="body2">
+                                          使用量: {limit.current_usage} / {limit.max_usage}
+                                        </Typography>
+                                        <Typography variant="body2" color={limit.current_usage >= limit.max_usage ? 'error' : 'success'}>
+                                          {limit.max_usage > 0 ? Math.round((limit.current_usage / limit.max_usage) * 100) : 0}%
+                                        </Typography>
+                                      </Box>
+                                      <Box sx={{ width: '100%', bgcolor: 'grey.200', borderRadius: 1, height: 8 }}>
+                                        <Box sx={{
+                                          width: `${limit.max_usage > 0 ? Math.min(100, (limit.current_usage / limit.max_usage) * 100) : 0}%`,
+                                          bgcolor: limit.current_usage >= limit.max_usage ? 'error.main' : 'primary.main',
+                                          borderRadius: 1,
+                                          height: 8
+                                        }} />
+                                      </Box>
+                                    </>
+                                  )}
+                                  {limit.resets_at && (
+                                    <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                                      重置时间: {new Date(limit.resets_at * 1000).toLocaleString()}
+                                    </Typography>
+                                  )}
+                                </Box>
+                              ))
+                            ) : (
+                              <Box sx={{ p: 2 }}>
+                                <Typography variant="body2" component="pre" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                                  {JSON.stringify(codexUsageData, null, 2)}
+                                </Typography>
+                              </Box>
+                            )}
+                          </Box>
+                        ) : (
+                          <Typography color="text.secondary">暂无用量数据</Typography>
+                        )}
+                      </DialogContent>
+                      <DialogActions>
+                        <Button onClick={() => setCodexUsageVisible(false)}>关闭</Button>
+                        <Button onClick={handleCodexUsage} disabled={codexUsageLoading} variant="outlined">
+                          刷新
                         </Button>
                       </DialogActions>
                     </Dialog>
