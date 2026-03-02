@@ -142,16 +142,28 @@ func (c *OAuth2Credentials) Refresh(ctx context.Context, proxyURL string, maxRet
 
 		// 检查响应状态
 		if resp.StatusCode != http.StatusOK {
-			// 解析错误响应
+			// 尝试解析标准 OAuth2 错误响应
 			var errResp TokenRefreshError
-			if err := json.Unmarshal(bodyBytes, &errResp); err == nil {
+			if err := json.Unmarshal(bodyBytes, &errResp); err == nil && errResp.Error != "" {
 				// 检查是否是不可重试的错误
 				if isNonRetryableError(errResp.Error) {
 					return fmt.Errorf("token refresh failed (non-retryable): %s - %s", errResp.Error, errResp.ErrorDescription)
 				}
 				lastErr = fmt.Errorf("token refresh failed: %s - %s", errResp.Error, errResp.ErrorDescription)
 			} else {
-				lastErr = fmt.Errorf("token refresh failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+				// 尝试解析 OpenAI 嵌套错误格式 {"error": {"message": ..., "code": ...}}
+				var codexErr CodexErrorResponse
+				if err := json.Unmarshal(bodyBytes, &codexErr); err == nil && codexErr.Error.Message != "" {
+					errCode := fmt.Sprintf("%v", codexErr.Error.Code)
+					if isNonRetryableCodexError(codexErr.Error.Type, errCode) {
+						return fmt.Errorf("token refresh failed (non-retryable): [%s] %s (code=%s)",
+							codexErr.Error.Type, codexErr.Error.Message, errCode)
+					}
+					lastErr = fmt.Errorf("token refresh failed: [%s] %s (code=%s)",
+						codexErr.Error.Type, codexErr.Error.Message, errCode)
+				} else {
+					lastErr = fmt.Errorf("token refresh failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+				}
 			}
 			continue
 		}
@@ -226,7 +238,7 @@ func extractAccountIDFromJWT(accessToken string) string {
 	return accountID
 }
 
-// isNonRetryableError 判断是否是不可重试的错误
+// isNonRetryableError 判断是否是不可重试的 OAuth2 标准错误
 func isNonRetryableError(errorType string) bool {
 	nonRetryableErrors := []string{
 		"invalid_grant",
@@ -239,6 +251,35 @@ func isNonRetryableError(errorType string) bool {
 
 	for _, e := range nonRetryableErrors {
 		if errorType == e {
+			return true
+		}
+	}
+	return false
+}
+
+// isNonRetryableCodexError 判断 OpenAI 嵌套错误格式是否不可重试
+func isNonRetryableCodexError(errorType string, errorCode string) bool {
+	// 不可重试的 error type
+	nonRetryableTypes := []string{
+		"invalid_request_error",
+	}
+	// 不可重试的 error code
+	nonRetryableCodes := []string{
+		"refresh_token_expired",
+		"token_expired",
+		"token_revoked",
+		"invalid_api_key",
+		"account_deactivated",
+	}
+
+	for _, c := range nonRetryableCodes {
+		if errorCode == c {
+			return true
+		}
+	}
+	// 401 + invalid_request_error 通常也是不可重试的
+	for _, t := range nonRetryableTypes {
+		if errorType == t {
 			return true
 		}
 	}

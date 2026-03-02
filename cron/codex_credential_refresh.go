@@ -95,6 +95,13 @@ func RunCodexCredentialAutoRefresh() {
 				failed++
 				logger.SysError(fmt.Sprintf("[Codex] Credential auto-refresh: channel_id=%d name=%s refresh failed: %v",
 					ch.Id, ch.Name, err))
+
+				// 如果是不可重试的错误（如 refresh_token 过期），自动禁用渠道
+				if strings.Contains(err.Error(), "non-retryable") {
+					logger.SysError(fmt.Sprintf("[Codex] Credential auto-refresh: channel_id=%d name=%s has non-retryable error, auto-disabling",
+						ch.Id, ch.Name))
+					model.UpdateChannelStatusById(ch.Id, config.ChannelStatusAutoDisabled)
+				}
 				continue
 			}
 
