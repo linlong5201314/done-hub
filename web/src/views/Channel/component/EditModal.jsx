@@ -800,127 +800,117 @@ const EditModal = ({ open, channelId, onCancel, onOk, groupOptions, isTag, model
 
   const submit = async(values, { setErrors, setStatus, setSubmitting }) => {
     setSubmitting(true)
-    values = trims(values)
-    if (values.base_url && values.base_url.endsWith('/')) {
-      values.base_url = values.base_url.slice(0, values.base_url.length - 1)
-    }
-    if (values.type === 3 && values.other === '') {
-      values.other = '2024-05-01-preview'
-    }
-    if (values.type === 18 && values.other === '') {
-      values.other = 'v2.1'
-    }
-    let res
-
-    let modelMappingModel = []
-
-    if (values.model_mapping) {
-      try {
-        const modelMapping = values.model_mapping.reduce((acc, item) => {
-          if (item.key && item.value) {
-            acc[item.key] = item.value
-          }
-          return acc
-        }, {})
-        const cleanedMapping = {}
-
-        for (const [key, value] of Object.entries(modelMapping)) {
-          if (key && value && !(key in cleanedMapping)) {
-            cleanedMapping[key] = value
-            modelMappingModel.push(key)
-          }
-        }
-
-        values.model_mapping = JSON.stringify(cleanedMapping, null, 2)
-      } catch (error) {
-        showError('Error parsing model_mapping:' + error.message)
-      }
-    }
-    let modelHeadersKey = []
-
-    if (values.model_headers) {
-      try {
-        const modelHeader = values.model_headers.reduce((acc, item) => {
-          if (item.key && item.value) {
-            acc[item.key] = item.value
-          }
-          return acc
-        }, {})
-        const cleanedHeader = {}
-
-        for (const [key, value] of Object.entries(modelHeader)) {
-          if (key && value && !(key in cleanedHeader)) {
-            cleanedHeader[key] = value
-            modelHeadersKey.push(key)
-          }
-        }
-
-        values.model_headers = JSON.stringify(cleanedHeader, null, 2)
-      } catch (error) {
-        showError('Error parsing model_headers:' + error.message)
-      }
-    }
-
-    if (values.custom_parameter) {
-      try {
-        // Validate that the custom_parameter is valid JSON
-        JSON.parse(values.custom_parameter)
-      } catch (error) {
-        showError('Error parsing custom_parameter: ' + error.message)
-        return
-      }
-    }
-
-    if (values.disabled_stream) {
-      values.disabled_stream = removeDuplicates(values.disabled_stream)
-    }
-
-    // 获取现有的模型 ID
-    const existingModelIds = values.models.map((model) => model.id)
-
-    // 找出在 modelMappingModel 中存在但不在 existingModelIds 中的模型
-    const newModelIds = modelMappingModel.filter((id) => !existingModelIds.includes(id))
-
-    // 合并现有的模型 ID 和新的模型 ID，并去重
-    const allUniqueModelIds = Array.from(new Set([...existingModelIds, ...newModelIds]))
-
-    // 创建新的 modelsStr
-    const modelsStr = allUniqueModelIds.join(',')
-    values.group = values.groups.join(',')
-
-    let baseApiUrl = '/api/channel/'
-
-    if (isTag) {
-      baseApiUrl = '/api/channel_tag/' + encodeURIComponent(channelId)
-    }
-
     try {
+      values = trims(values)
+      if (values.base_url && values.base_url.endsWith('/')) {
+        values.base_url = values.base_url.slice(0, values.base_url.length - 1)
+      }
+      if (values.type === 3 && values.other === '') {
+        values.other = '2024-05-01-preview'
+      }
+      if (values.type === 18 && values.other === '') {
+        values.other = 'v2.1'
+      }
+
+      let res
+      let modelMappingModel = []
+
+      if (values.model_mapping) {
+        try {
+          const modelMapping = values.model_mapping.reduce((acc, item) => {
+            if (item.key && item.value) {
+              acc[item.key] = item.value
+            }
+            return acc
+          }, {})
+          const cleanedMapping = {}
+
+          for (const [key, value] of Object.entries(modelMapping)) {
+            if (key && value && !(key in cleanedMapping)) {
+              cleanedMapping[key] = value
+              modelMappingModel.push(key)
+            }
+          }
+
+          values.model_mapping = JSON.stringify(cleanedMapping, null, 2)
+        } catch (error) {
+          showError('Error parsing model_mapping:' + error.message)
+        }
+      }
+
+      if (values.model_headers) {
+        try {
+          const modelHeader = values.model_headers.reduce((acc, item) => {
+            if (item.key && item.value) {
+              acc[item.key] = item.value
+            }
+            return acc
+          }, {})
+          const cleanedHeader = {}
+
+          for (const [key, value] of Object.entries(modelHeader)) {
+            if (key && value && !(key in cleanedHeader)) {
+              cleanedHeader[key] = value
+            }
+          }
+
+          values.model_headers = JSON.stringify(cleanedHeader, null, 2)
+        } catch (error) {
+          showError('Error parsing model_headers:' + error.message)
+        }
+      }
+
+      if (values.custom_parameter) {
+        try {
+          JSON.parse(values.custom_parameter)
+        } catch (error) {
+          throw new Error('Error parsing custom_parameter: ' + error.message)
+        }
+      }
+
+      if (values.disabled_stream) {
+        values.disabled_stream = removeDuplicates(values.disabled_stream)
+      }
+
+      const existingModelIds = values.models.map((model) => model.id)
+      const newModelIds = modelMappingModel.filter((id) => !existingModelIds.includes(id))
+      const allUniqueModelIds = Array.from(new Set([...existingModelIds, ...newModelIds]))
+      const modelsStr = allUniqueModelIds.join(',')
+      values.group = values.groups.join(',')
+
+      let baseApiUrl = '/api/channel/'
+      if (isTag) {
+        baseApiUrl = '/api/channel_tag/' + encodeURIComponent(channelId)
+      }
+
       if (channelId) {
         res = await API.put(baseApiUrl, { ...values, id: parseInt(channelId), models: modelsStr })
       } else {
         res = await API.post(baseApiUrl, { ...values, models: modelsStr })
       }
-      const { success, message } = res.data
+      const { success, message, data } = res.data
       if (success) {
         if (channelId) {
           showSuccess(t('channel_edit.editSuccess'))
+        } else if (batchAdd && data?.count > 1) {
+          showSuccess(`批量创建成功，共创建 ${data.count} 个渠道`)
         } else {
           showSuccess(t('channel_edit.addSuccess'))
         }
-        setSubmitting(false)
         setStatus({ success: true })
         onOk(true)
-
       } else {
         setStatus({ success: false })
         showError(message)
         setErrors({ submit: message })
       }
     } catch (error) {
+      const message = error?.message || '提交失败'
       setStatus({ success: false })
-      showError(error.message)
-      setErrors({ submit: error.message })
-
+      showError(message)
+      setErrors({ submit: message })
+    } finally {
+      setSubmitting(false)
     }
   }
 

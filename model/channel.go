@@ -185,7 +185,23 @@ func BatchDeleteChannel(ids []int) (int64, error) {
 }
 
 func BatchInsertChannels(channels []Channel) error {
-	err := DB.Omit("UsedQuota").Create(&channels).Error
+	if len(channels) == 0 {
+		return nil
+	}
+
+	const insertChunkSize = 200
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		for i := 0; i < len(channels); i += insertChunkSize {
+			end := i + insertChunkSize
+			if end > len(channels) {
+				end = len(channels)
+			}
+			if err := tx.Omit("UsedQuota").Create(channels[i:end]).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		return err
 	}
