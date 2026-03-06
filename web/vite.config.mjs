@@ -37,12 +37,12 @@ export default defineConfig({
   server: {
     // this ensures that the browser opens upon server start
     open: true,
-    // this sets a default port to 3000
+    // this sets a default port to 3001
     host: true,
     port: 3010,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:3000', // 设置代理的目标服务器
+        target: 'http://127.0.0.1:3001', // 设置代理的目标服务器
         changeOrigin: true
       }
     }
@@ -50,7 +50,7 @@ export default defineConfig({
   preview: {
     // this ensures that the browser opens upon preview start
     open: true,
-    // this sets a default port to 3000
+    // this sets a default port to 3001
     port: 3010
   }
 });

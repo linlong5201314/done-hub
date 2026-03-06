@@ -11,7 +11,7 @@ var Version = "v0.0.0"            // this hard coding will be replaced automatic
 var Commit = "unknown"
 var BuildTime = "unknown"
 var SystemName = "Done Hub"
-var ServerAddress = "http://localhost:3000"
+var ServerAddress = "http://localhost:3001"
 var PaymentCallbackAddress = ""
 var Debug = false
 

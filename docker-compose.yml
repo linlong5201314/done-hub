@@ -6,7 +6,7 @@ services:
     container_name: done-hub
     restart: always
     ports:
-      - "3000:3000"
+      - "3001:3001"
     volumes:
       - ./data:/data
     environment:
@@ -26,7 +26,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "wget -q -O - http://localhost:3000/api/status | grep -o '\"success\":\\s*true' | awk -F: '{print $$2}'",
+          "wget -q -O - http://localhost:3001/api/status | grep -o '\"success\":\\s*true' | awk -F: '{print $$2}'",
         ]
       interval: 30s
       timeout: 10s

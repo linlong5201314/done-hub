@@ -46,7 +46,7 @@ sudo systemctl start docker
 
 ::: warning 注意
 
-- `-p 3000:3000` 中的第一个 `3000` 是宿主机的端口，可以根据需要进行修改。
+- `-p 3001:3001` 中的第一个 `3001` 是宿主机的端口，可以根据需要进行修改。
 - 数据和日志将会保存在宿主机的 `/data/one-hub` 目录，请确保该目录存在且具有写入权限，或者更改为合适的目录。
 - 如果启动失败，请添加 `--privileged=true`，具体参考 [issue #482](https://github.com/songquanpeng/one-api/issues/482)。
 - 如果你的并发量较大，**务必**设置 `SQL_DSN`。
@@ -59,7 +59,7 @@ sudo systemctl start docker
 #### 使用 SQLite
 
 ```shell
-docker run -d -p 3000:3000 \
+docker run -d -p 3001:3001 \
   --name one-hub \
   --restart always \
   -e TZ=Asia/Shanghai \
@@ -74,7 +74,7 @@ docker run -d -p 3000:3000 \
 在 SQLite 的基础上，添加 `-e SQL_DSN="root:123456@tcp(localhost:3306)/oneapi"`。请根据实际情况修改数据库连接参数。
 
 ```shell
-docker run -d -p 3000:3000 \
+docker run -d -p 3001:3001 \
   --name one-hub \
   --restart always \
   -e TZ=Asia/Shanghai \
@@ -89,7 +89,7 @@ docker run -d -p 3000:3000 \
 #### 使用 PostgreSQL
 
 ```shell
-docker run -d -p 3000:3000 \
+docker run -d -p 3001:3001 \
   --name one-hub \
   --restart always \
   -e TZ=Asia/Shanghai \
@@ -100,7 +100,7 @@ docker run -d -p 3000:3000 \
   ghcr.io/martialbe/one-api
 ```
 
-部署完毕后，访问 `http://localhost:3000` 即可。
+部署完毕后，访问 `http://localhost:3001` 即可。
 
 ### 使用配置文件部署
 
@@ -125,7 +125,7 @@ sql_dsn: "root:123456@tcp(localhost:3306)/oneapi" # MySQL配置示例
 3. 运行容器
 
 ```shell
-docker run -d -p 3000:3000 \
+docker run -d -p 3001:3001 \
   --name one-hub \
   --restart always \
   -e TZ=Asia/Shanghai \
@@ -179,7 +179,7 @@ docker-compose ps
 
 请确保所有的服务都已经成功启动，并且状态为 'Up'。
 
-部署完毕后，访问 `http://localhost:3000` 即可。
+部署完毕后，访问 `http://localhost:3001` 即可。
 
 ## 手动部署
 
@@ -200,10 +200,10 @@ docker-compose ps
 
    ```shell
    chmod u+x one-api
-   ./one-api --port 3000 --log-dir ./logs
+   ./one-api --port 3001 --log-dir ./logs
    ```
 
-4. **访问应用**：在浏览器中访问 `http://localhost:3000` 并登录。初始账号用户名为 `root`，密码为 `123456`。
+4. **访问应用**：在浏览器中访问 `http://localhost:3001` 并登录。初始账号用户名为 `root`，密码为 `123456`。
 
 5. **重新编译**：如果需要重新编译，可以使用以下命令：
 

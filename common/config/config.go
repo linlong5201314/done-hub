@@ -30,7 +30,7 @@ func setEnv() {
 }
 
 func defaultConfig() {
-	viper.SetDefault("port", "3000")
+	viper.SetDefault("port", "3001")
 	viper.SetDefault("gin_mode", "release")
 	viper.SetDefault("log_dir", "./logs")
 	viper.SetDefault("sqlite_path", "done-hub.db")

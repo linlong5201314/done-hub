@@ -96,7 +96,7 @@ echo "已移除: $(docker rm -f one-api)"
 cd /www/wwwroot/
 
 # 运行新的容器 这里使用的是SQlite的docker命令，可以改成你自己想要的
-echo "已启动: $(docker run -d -p 3000:3000 --name one-api --restart always -e TZ=Asia/Shanghai -v /home/ubuntu/data/one-api:/data ghcr.io/martialbe/one-api)"
+echo "已启动: $(docker run -d -p 3001:3001 --name one-api --restart always -e TZ=Asia/Shanghai -v /home/ubuntu/data/one-api:/data ghcr.io/martialbe/one-api)"
 
 # 打印更新时间和版本
 echo "更新时间: $(date)"

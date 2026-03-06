@@ -8,6 +8,6 @@ RUN apk update \
     && update-ca-certificates 2>/dev/null || true
 
 COPY done-hub-$TARGETARCH /done-hub
-EXPOSE 3000
+EXPOSE 3001
 WORKDIR /data
 ENTRYPOINT ["/done-hub"]

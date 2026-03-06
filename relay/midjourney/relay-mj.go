@@ -444,7 +444,7 @@ func RelayMidjourneySubmit(c *gin.Context, relayMode int) *provider.MidjourneyRe
 	//baseURL := common.ChannelBaseURLs[channelType]
 	requestURL := getMjRequestPath(c.Request.URL.String())
 
-	//midjRequest.NotifyHook = "http://127.0.0.1:3000/mj/notify"
+	//midjRequest.NotifyHook = "http://127.0.0.1:3001/mj/notify"
 
 	quotaInstance, errWithOA := getQuota(c, midjRequest.Action)
 	if errWithOA != nil {

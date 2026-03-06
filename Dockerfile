@@ -9,7 +9,7 @@ RUN yarn --frozen-lockfile
 
 COPY ./web .
 COPY ./VERSION .
-RUN DISABLE_ESLINT_PLUGIN='true' VITE_APP_VERSION=$(cat VERSION) npm run build
+RUN NODE_OPTIONS=--max-old-space-size=2048 DISABLE_ESLINT_PLUGIN='true' VITE_APP_VERSION=$(cat VERSION) npm run build
 
 FROM golang:1.25.5 AS builder2
 
@@ -33,6 +33,6 @@ RUN apk update && \
     update-ca-certificates 2>/dev/null || true
 
 COPY --from=builder2 /build/done-hub /
-EXPOSE 3000
+EXPOSE 3001
 WORKDIR /data
 ENTRYPOINT ["/done-hub"]
