@@ -25,6 +25,16 @@ func SetupDB() {
 	if err != nil {
 		logger.FatalLog("failed to initialize database: " + err.Error())
 	}
+
+	if config.IsMasterNode {
+		restored, restoreErr := RestoreAutoDisabledChannels()
+		if restoreErr != nil {
+			logger.SysError("failed to restore auto-disabled channels: " + restoreErr.Error())
+		} else if restored > 0 {
+			logger.SysLog(fmt.Sprintf("restored %d auto-disabled channels to enabled state", restored))
+		}
+	}
+
 	ChannelGroup.Load()
 	GlobalUserGroupRatio.Load()
 	config.RootUserEmail = GetRootUserEmail()

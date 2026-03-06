@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"strings"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
@@ -18,6 +19,11 @@ import (
 )
 
 var disableGroup singleflight.Group
+
+const (
+	minChannelCircuitBreakSeconds int64 = 600
+	balanceCircuitBreakSeconds    int64 = 3600
+)
 
 // 正则表达式匹配特定的文件访问权限错误，这类错误不应该禁用渠道
 var fileAccessPermissionRegex = regexp.MustCompile(`You do not have permission to access the File .+ or it may not exist\.`)
@@ -80,6 +86,56 @@ func ShouldDisableChannel(channelType int, err *types.OpenAIErrorWithStatusCode)
 	}
 
 	return false
+}
+
+func GetChannelCircuitBreakSeconds() int64 {
+	durationSeconds := int64(config.RetryCooldownSeconds)
+	if durationSeconds < minChannelCircuitBreakSeconds {
+		durationSeconds = minChannelCircuitBreakSeconds
+	}
+	return durationSeconds
+}
+
+func GetBalanceCircuitBreakSeconds() int64 {
+	durationSeconds := GetChannelCircuitBreakSeconds()
+	if durationSeconds < balanceCircuitBreakSeconds {
+		durationSeconds = balanceCircuitBreakSeconds
+	}
+	return durationSeconds
+}
+
+// CircuitBreakChannel 临时熔断渠道，不修改数据库启用状态。
+func CircuitBreakChannel(channelId int, channelName string, reason string, durationSeconds int64, sendNotify bool) {
+	if channelId == 0 || durationSeconds <= 0 {
+		return
+	}
+
+	if strings.TrimSpace(reason) == "" {
+		reason = "上游返回不可用错误"
+	}
+
+	key := fmt.Sprintf("circuit_break_channel_%d", channelId)
+	_, err, _ := disableGroup.Do(key, func() (interface{}, error) {
+		if model.ChannelGroup.IsChannelInCooldown(channelId) {
+			return nil, nil
+		}
+
+		if !model.ChannelGroup.SetChannelCooldownsWithDuration(channelId, durationSeconds) {
+			return nil, nil
+		}
+
+		if sendNotify {
+			subject := fmt.Sprintf("通道「%s」（#%d）已进入熔断", channelName, channelId)
+			content := fmt.Sprintf("通道「%s」（#%d）已进入熔断，持续 %d 秒，原因：%s", channelName, channelId, durationSeconds, reason)
+			notify.Send(subject, content)
+		}
+
+		return nil, nil
+	})
+
+	if err != nil {
+		logger.SysError(fmt.Sprintf("CircuitBreakChannel failed for channel %d: %v", channelId, err))
+	}
 }
 
 // disable & notify

@@ -34,6 +34,7 @@ const (
 // 关键词常量
 const (
 	KeywordNoAvailableChannel = "无可用渠道"
+	channelWideCooldownModel  = "*"
 )
 
 type ChannelChoice struct {
@@ -94,11 +95,30 @@ func (cc *ChannelsChooser) SetCooldowns(channelId int, modelName string) bool {
 
 // SetCooldownsWithDuration 设置指定渠道和模型的冷却时间（支持自定义冻结时长）
 func (cc *ChannelsChooser) SetCooldownsWithDuration(channelId int, modelName string, durationSeconds int64) bool {
-	if channelId == 0 || modelName == "" || durationSeconds == 0 {
+	if channelId == 0 || modelName == "" {
 		return false
 	}
 
-	key := fmt.Sprintf("%d:%s", channelId, modelName)
+	return cc.setCooldownKeyWithDuration(fmt.Sprintf("%d:%s", channelId, modelName), durationSeconds)
+}
+
+func (cc *ChannelsChooser) SetChannelCooldowns(channelId int) bool {
+	return cc.SetChannelCooldownsWithDuration(channelId, int64(config.RetryCooldownSeconds))
+}
+
+func (cc *ChannelsChooser) SetChannelCooldownsWithDuration(channelId int, durationSeconds int64) bool {
+	if channelId == 0 {
+		return false
+	}
+
+	return cc.setCooldownKeyWithDuration(fmt.Sprintf("%d:%s", channelId, channelWideCooldownModel), durationSeconds)
+}
+
+func (cc *ChannelsChooser) setCooldownKeyWithDuration(key string, durationSeconds int64) bool {
+	if durationSeconds <= 0 {
+		return false
+	}
+
 	nowTime := time.Now().Unix()
 	newCooldownTime := nowTime + durationSeconds
 
@@ -125,7 +145,24 @@ func (cc *ChannelsChooser) IsInCooldown(channelId int, modelName string) bool {
 		return false
 	}
 
+	if cc.IsChannelInCooldown(channelId) {
+		return true
+	}
+
 	key := fmt.Sprintf("%d:%s", channelId, modelName)
+	return cc.isCooldownKeyActive(key)
+}
+
+func (cc *ChannelsChooser) IsChannelInCooldown(channelId int) bool {
+	if channelId == 0 {
+		return false
+	}
+
+	key := fmt.Sprintf("%d:%s", channelId, channelWideCooldownModel)
+	return cc.isCooldownKeyActive(key)
+}
+
+func (cc *ChannelsChooser) isCooldownKeyActive(key string) bool {
 	nowTime := time.Now().Unix()
 
 	cooldownTime, exists := cc.Cooldowns.Load(key)

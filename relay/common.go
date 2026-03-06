@@ -574,11 +574,12 @@ func shouldRetryBadRequest(channelType int, apiErr *types.OpenAIErrorWithStatusC
 	}
 }
 
-func processChannelRelayError(ctx context.Context, channelId int, channelName string, err *types.OpenAIErrorWithStatusCode, channelType int) {
+func processChannelRelayError(ctx context.Context, channelId int, channelName string, modelName string, err *types.OpenAIErrorWithStatusCode, channelType int) {
 	if controller.ShouldDisableChannel(channelType, err) {
-		logger.LogError(ctx, fmt.Sprintf("channel_disabled channel_id=%d channel_name=\"%s\" channel_type=%d status_code=%d error=\"%s\" auto_disabled=true",
-			channelId, channelName, channelType, err.StatusCode, err.Message))
-		controller.DisableChannel(channelId, channelName, err.Message, true)
+		durationSeconds := controller.GetChannelCircuitBreakSeconds()
+		logger.LogWarn(ctx, fmt.Sprintf("channel_circuit_break channel_id=%d channel_name=\"%s\" model=\"%s\" channel_type=%d status_code=%d cooldown_seconds=%d error=\"%s\"",
+			channelId, channelName, modelName, channelType, err.StatusCode, durationSeconds, err.Message))
+		controller.CircuitBreakChannel(channelId, channelName, err.Message, durationSeconds, true)
 	}
 }
 

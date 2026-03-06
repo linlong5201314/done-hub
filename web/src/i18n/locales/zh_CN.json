@@ -885,13 +885,13 @@
         "title": "监控设置",
         "channelDisableThreshold": {
           "label": "最长响应时间",
-          "placeholder": "单位秒，当运行通道全部测试时，超过此时间将自动禁用通道"
+          "placeholder": "单位秒，当运行通道全部测试时，超过此时间将临时熔断通道并切换其他可用渠道"
         },
         "quotaRemindThreshold": {
           "label": "额度提醒阈值",
           "placeholder": "低于此额度时将发送邮件提醒用户"
         },
-        "automaticDisableChannel": "失败时自动禁用通道",
+        "automaticDisableChannel": "失败时自动熔断当前通道",
         "automaticEnableChannel": "成功时自动启用通道",
         "saveMonitoringSettings": "保存监控设置"
       },
@@ -963,9 +963,9 @@
         "save": "保存额外Token价格设置"
       },
       "disableChannelKeywordsSettings": {
-        "title": "禁用通道关键词设置",
-        "info": "配置禁用通道关键词，每行一个关键词。",
-        "save": "保存禁用通道关键词设置"
+        "title": "通道熔断关键词设置",
+        "info": "配置通道熔断关键词，每行一个关键词。",
+        "save": "保存通道熔断关键词设置"
       },
       "claudeSettings": {
         "title": "Claude设置",

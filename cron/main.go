@@ -93,10 +93,10 @@ func InitCron() {
 		return
 	}
 
-	// Codex 凭证自动刷新任务：每 10 分钟检查一次，提前 24 小时刷新即将过期的凭证
+	// Codex 凭证自动刷新任务：每 6 小时检查一次，提前 24 小时刷新即将过期的凭证
 	err = scheduler.Manager.AddJob(
 		"codex_credential_auto_refresh",
-		gocron.DurationJob(10*time.Minute),
+		gocron.DurationJob(6*time.Hour),
 		gocron.NewTask(func() {
 			RunCodexCredentialAutoRefresh()
 		}),
@@ -104,6 +104,6 @@ func InitCron() {
 	if err != nil {
 		logger.SysError("Codex credential auto-refresh cron job error: " + err.Error())
 	} else {
-		logger.SysLog("Codex credential auto-refresh task registered (every 10 minutes)")
+		logger.SysLog("Codex credential auto-refresh task registered (every 6 hours)")
 	}
 }

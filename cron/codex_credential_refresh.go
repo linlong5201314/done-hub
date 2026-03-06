@@ -21,6 +21,8 @@ const (
 	codexCredentialRefreshBatchSize = 200
 	// codexCredentialRefreshTimeout 每次刷新操作的超时时间
 	codexCredentialRefreshTimeout = 15 * time.Second
+	// 不可重试的凭证错误只做运行时熔断，不再自动改写渠道状态
+	codexCredentialFailureCircuitBreakSeconds int64 = 3600
 )
 
 var codexCredentialRefreshRunning atomic.Bool
@@ -96,11 +98,13 @@ func RunCodexCredentialAutoRefresh() {
 				logger.SysError(fmt.Sprintf("[Codex] Credential auto-refresh: channel_id=%d name=%s refresh failed: %v",
 					ch.Id, ch.Name, err))
 
-				// 如果是不可重试的错误（如 refresh_token 过期），自动禁用渠道
+				// 如果是不可重试的错误（如 refresh_token 过期），临时熔断渠道而不是自动禁用
 				if strings.Contains(err.Error(), "non-retryable") {
-					logger.SysError(fmt.Sprintf("[Codex] Credential auto-refresh: channel_id=%d name=%s has non-retryable error, auto-disabling",
-						ch.Id, ch.Name))
-					model.UpdateChannelStatusById(ch.Id, config.ChannelStatusAutoDisabled)
+					if !model.ChannelGroup.IsChannelInCooldown(ch.Id) {
+						model.ChannelGroup.SetChannelCooldownsWithDuration(ch.Id, codexCredentialFailureCircuitBreakSeconds)
+					}
+					logger.SysError(fmt.Sprintf("[Codex] Credential auto-refresh: channel_id=%d name=%s has non-retryable error, circuit-breaking for %ds instead of disabling",
+						ch.Id, ch.Name, codexCredentialFailureCircuitBreakSeconds))
 				}
 				continue
 			}

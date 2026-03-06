@@ -562,6 +562,14 @@ func UpdateChannelKey(id int, key string) error {
 	return nil
 }
 
+func RestoreAutoDisabledChannels() (int64, error) {
+	result := DB.Model(&Channel{}).
+		Where("status = ?", config.ChannelStatusAutoDisabled).
+		Update("status", config.ChannelStatusEnabled)
+
+	return result.RowsAffected, result.Error
+}
+
 func DeleteDisabledChannel() (int64, error) {
 	result := DB.Where("status = ? or status = ?", config.ChannelStatusAutoDisabled, config.ChannelStatusManuallyDisabled).Delete(&Channel{})
 	if result.Error == nil && result.RowsAffected > 0 {

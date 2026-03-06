@@ -968,11 +968,11 @@
         "title": "Log Settings"
       },
       "monitoringSettings": {
-        "automaticDisableChannel": "Automatically Disable Channel on Failure",
+        "automaticDisableChannel": "Automatically Circuit Break Failed Channel",
         "automaticEnableChannel": "Automatically Enable Channel on Success",
         "channelDisableThreshold": {
           "label": "Maximum Response Time",
-          "placeholder": "In seconds, if all running channels exceed this time, the channel will be automatically disabled"
+          "placeholder": "In seconds, if all running channels exceed this time, the channel will be temporarily circuit-broken instead of disabled"
         },
         "quotaRemindThreshold": {
           "label": "Quota Reminder Threshold",
@@ -1061,9 +1061,9 @@
         "title": "Extra token price settings"
       },
       "disableChannelKeywordsSettings": {
-        "info": "Disable channel keywords, one keyword per line.",
-        "save": "Save disabled channel keyword settings",
-        "title": "Disable channel keyword settings"
+        "info": "Channel circuit-break keywords, one keyword per line.",
+        "save": "Save channel circuit-break keyword settings",
+        "title": "Channel circuit-break keyword settings"
       },
       "safetySettings": {
         "title": "System Safety Settings",

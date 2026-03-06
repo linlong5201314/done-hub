@@ -216,8 +216,8 @@ func TestChannel(c *gin.Context) {
 	msg := ""
 	if openaiErr != nil {
 		if ShouldDisableChannel(channel.Type, openaiErr) {
-			msg = fmt.Sprintf("测速失败，已被禁用，原因：%s", err.Error())
-			DisableChannel(channel.Id, channel.Name, err.Error(), false)
+			msg = fmt.Sprintf("测速失败，已临时熔断并切换其他可用渠道，原因：%s", err.Error())
+			CircuitBreakChannel(channel.Id, channel.Name, err.Error(), GetChannelCircuitBreakSeconds(), false)
 		} else {
 			msg = fmt.Sprintf("测速失败，原因：%s", err.Error())
 		}
@@ -287,17 +287,17 @@ func testAllChannels(isNotify bool) error {
 					}
 				}
 			} else {
-				// 如果通道启用状态，但是返回了错误 或者 响应时间超过阈值，需要判断是否需要禁用
+				// 如果通道启用状态，但是返回了错误 或者 响应时间超过阈值，需要判断是否需要熔断
 				if milliseconds > disableThreshold {
 					errMsg := fmt.Sprintf("响应时间 %.2fs 超过阈值 %.2fs ", float64(milliseconds)/1000.0, float64(disableThreshold)/1000.0)
-					sb.WriteString(fmt.Sprintf("- %s \n\n- 禁用\n\n", errMsg))
-					DisableChannel(channel.Id, channel.Name, errMsg, false)
+					sb.WriteString(fmt.Sprintf("- %s \n\n- 临时熔断并切换其他可用渠道\n\n", errMsg))
+					CircuitBreakChannel(channel.Id, channel.Name, errMsg, GetChannelCircuitBreakSeconds(), false)
 					continue
 				}
 
 				if ShouldDisableChannel(channel.Type, openaiErr) {
-					sb.WriteString(fmt.Sprintf("- 已被禁用，原因：%s\n\n", utils.EscapeMarkdownText(err.Error())))
-					DisableChannel(channel.Id, channel.Name, err.Error(), false)
+					sb.WriteString(fmt.Sprintf("- 已临时熔断，原因：%s\n\n", utils.EscapeMarkdownText(err.Error())))
+					CircuitBreakChannel(channel.Id, channel.Name, err.Error(), GetChannelCircuitBreakSeconds(), false)
 					continue
 				}
 

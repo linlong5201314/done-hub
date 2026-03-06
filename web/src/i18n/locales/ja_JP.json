@@ -907,11 +907,11 @@
         "title": "ログ設定"
       },
       "monitoringSettings": {
-        "automaticDisableChannel": "失敗時にチャネルを自動無効化",
+        "automaticDisableChannel": "失敗時に現在のチャネルを自動サーキットブレーク",
         "automaticEnableChannel": "成功時にチャネルを自動有効化",
         "channelDisableThreshold": {
           "label": "最大応答時間",
-          "placeholder": "秒単位、全ての実行チャネルがこの時間を超えると、チャネルは自動的に無効になります"
+          "placeholder": "秒単位、全ての実行チャネルがこの時間を超えると、チャネルは無効化されず一時的にサーキットブレークされます"
         },
         "quotaRemindThreshold": {
           "label": "クォータ通知しきい値",
@@ -1000,9 +1000,9 @@
         "title": "追加トークン価格設定"
       },
       "disableChannelKeywordsSettings": {
-        "info": "キーワードを1行ずつ入力して、禁止ワードリストを設定してください。",
-        "save": "無効なチャネルキーワード設定を保存します",
-        "title": "チャネルキーワード設定を無効にする"
+        "info": "チャネルをサーキットブレークするキーワードを1行ずつ設定してください。",
+        "save": "チャネルのサーキットブレークキーワード設定を保存します",
+        "title": "チャネルのサーキットブレークキーワード設定"
       },
       "safetySettings": {
         "title": "システムセキュリティ設定",
